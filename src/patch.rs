@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 use winsafe::gui::Edit;
 use winsafe::prelude::{user_Hwnd, GuiWindow, GuiWindowText};
 use winsafe::{msg, WString};
-use zstd::zstd_safe::CParameter;
+use zstd::zstd_safe::{CParameter, CompressionLevel};
 use zstd::Decoder;
 
 
@@ -30,7 +30,7 @@ fn log_info(log: &Edit, text: &str) {
     }
 }
 
-pub(crate) fn create_patch(old_file: String, new_file: String, log: &Edit) -> Result<(), String> {
+pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &Edit) -> Result<(), String> {
     if !metadata(&old_file).map_or(false, |x| x.is_dir()) { return Err("Old path doesn't exist or is not a directory".to_string()) };
     if !metadata(&new_file).map_or(false, |x| x.is_dir()) { return Err("New path doesn't exist or is not a directory".to_string()) };
 
@@ -56,7 +56,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, log: &Edit) -> Re
         }
     })?;
 
-    log_info(log, "Compiling changed files");
+    log_info(log, format!("Compiling changed files, compression level: {lvl}").as_ref());
     let diff_files_path = Path::join(temp_dir.as_ref(), "diff_files").to_str().ok_or("to_str failed for diff_files_path")?.to_string();
     fs::create_dir_all(&diff_files_path).map_err(|_| "Couldn't create diff_files dir")?;
     old_set.intersection(&new_set).try_for_each(|x| {
@@ -85,7 +85,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, log: &Edit) -> Re
                 if i > 1 { return Err("Known bug: File is different but end is identical".to_string())}
                 continue;
             }
-            let patch_data = create(old_data, new_data)?;
+            let patch_data = create(old_data, new_data, lvl)?;
             let patch_file = Path::join(diff_files_path.as_ref(), x.to_string() + format!(".zspatch{i}").as_ref());
             create_path(x, &diff_files_path)?;
             fs::write(patch_file, patch_data).map_err(|_| format!("Couldn't write .zspatch file {x}"))?;
@@ -250,12 +250,12 @@ fn apply(old_data: Vec<u8>, patch_data: Vec<u8>) -> Result<Vec<u8>, ()> {
     Ok(new_data)
 }
 
-fn create(old_data: Vec<u8>, new_data: Vec<u8>) -> Result<Vec<u8>, String> {
+fn create(old_data: Vec<u8>, new_data: Vec<u8>, lvl: u32) -> Result<Vec<u8>, String> {
     let high_bit = fio_high_bit64(old_data.len());
     let window_log = (high_bit+1).clamp(10, 31);
 
     let mut dict = zstd::zstd_safe::CCtx::create();
-    dict.set_parameter(CParameter::CompressionLevel(1)).map_err(|_| "Couldn't set compression level")?;
+    dict.set_parameter(CParameter::CompressionLevel(lvl as CompressionLevel)).map_err(|_| "Couldn't set compression level")?;
     dict.set_parameter(CParameter::WindowLog(window_log)).map_err(|_| format!("Couldn't set window log {window_log}"))?;
     dict.set_parameter(CParameter::EnableLongDistanceMatching(true)).map_err(|_| "Couldn't enable long distance matching")?;
     dict.ref_prefix(&old_data).map_err(|_| "Couldn't apply ref prefix")?;

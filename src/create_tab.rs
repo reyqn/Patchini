@@ -13,6 +13,7 @@ pub struct CreateTab {
     _label_new: gui::Label,
     edit_new: gui::Edit,
     btn_new: gui::Button,
+    track_lvl: gui::Trackbar,
     btn_create: gui::Button,
     edit_log: gui::Edit
 }
@@ -35,10 +36,12 @@ impl CreateTab {
         let _label_new = gui::Label::new_dlg(&wnd, ids::LBL_NEW, dont_move);
         let edit_new = gui::Edit::new_dlg(&wnd, ids::TXT_NEW, dont_move);
         let btn_new  = gui::Button::new_dlg(&wnd, ids::BTN_NEW, dont_move);
+        let _label_lvl = gui::Edit::new_dlg(&wnd, ids::TXT_LVL, dont_move);
+        let track_lvl  = gui::Trackbar::new_dlg(&wnd, ids::TRACK_LVL, dont_move);
         let btn_create  = gui::Button::new_dlg(&wnd, ids::BTN_CREATE, dont_move);
         let edit_log = gui::Edit::new_dlg(&wnd, ids::TXT_CREATE, dont_move);
 
-        let new_self = Self { wnd, _label_old, edit_old, btn_old, _label_new, edit_new, btn_new, btn_create, edit_log };
+        let new_self = Self { wnd, _label_old, edit_old, btn_old, _label_new, edit_new, btn_new, track_lvl, btn_create, edit_log };
         new_self.events();
         new_self
     }
@@ -53,6 +56,7 @@ impl CreateTab {
     fn events(&self) {
         let self2 = self.clone();
         self.wnd.on().wm_init_dialog(move |_| {
+            self2.track_lvl.set_range(1,22);
             self2.switch_view(false);
             Ok(true)
         });
@@ -110,9 +114,10 @@ impl CreateTab {
                     self2.btn_create.hwnd().EnableWindow(false);
                     let old_path = self2.edit_old.text().to_string();
                     let new_path = self2.edit_new.text().to_string();
+                    let lvl = self2.track_lvl.pos();
                     let self3 = self2.clone();
                     move || {
-                        match create_patch(old_path, new_path, &self3.edit_log) {
+                        match create_patch(old_path, new_path, lvl, &self3.edit_log) {
                             Ok(_) => {
                                 *crate::main_window::EPOCH.lock().unwrap() = None;
                                 HWND::NULL.MessageBox(
