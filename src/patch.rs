@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::fs;
 use std::fs::{metadata, File};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::path::Path;
 use tar::{Archive, Builder, Entry, EntryType};
 use walkdir::WalkDir;
@@ -12,6 +12,7 @@ use winsafe::{msg, WString};
 use zstd::zstd_safe::{CParameter, CompressionLevel};
 use zstd::Decoder;
 
+const CHUNK_SIZE: usize = 0x40000000;
 
 fn create_path(path: &str, root: &str) -> Result<(), String> {
     if let Some(x) = path.rfind(std::path::MAIN_SEPARATOR_STR) {
@@ -67,29 +68,26 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &E
         let mut old = File::open(&old_path).map_err(|_| format!("Couldn't open old file {x}"))?;
         let mut new = File::open(&new_path).map_err(|_| format!("Couldn't open new file {x}"))?;
         let old_size = old.metadata().map_err(|_| format!("Couldn't get metadata for file {x}"))?.len();
-        let chunk_size = 0x40000000;
         let mut i = 0;
         loop {
             i += 1;
-            let mut old_data = Vec::with_capacity(min(old_size as usize, chunk_size));
-            let mut new_data = Vec::with_capacity(min(old_size as usize, chunk_size));
-            let n = Read::by_ref(&mut old).take(chunk_size as u64).read_to_end(&mut old_data).map_err(|_| format!("Couldn't read old file {x}"))?;
+            let mut old_data = Vec::with_capacity(min(old_size as usize, CHUNK_SIZE));
+            let mut new_data = Vec::with_capacity(min(old_size as usize, CHUNK_SIZE));
+            let n = Read::by_ref(&mut old).take(CHUNK_SIZE as u64).read_to_end(&mut old_data).map_err(|_| format!("Couldn't read old file {x}"))?;
             if old.stream_position().map_err(|_| format!("Couldn't get old file {x} stream position"))?.eq(&old_size) {
                 Read::by_ref(&mut new).read_to_end(&mut new_data).map_err(|_| format!("Couldn't read new file {x}"))?;
             } else {
-                Read::by_ref(&mut new).take(chunk_size as u64).read_to_end(&mut new_data).map_err(|_| format!("Couldn't read new file {x} to end"))?;
+                Read::by_ref(&mut new).take(CHUNK_SIZE as u64).read_to_end(&mut new_data).map_err(|_| format!("Couldn't read new file {x} to end"))?;
             }
             if n == 0 { break; }
             if old_data.eq(&new_data) {
-                //FIXME don't skip if i > 1
-                if i > 1 { return Err("Known bug: File is different but end is identical".to_string())}
                 continue;
             }
             let patch_data = create(old_data, new_data, lvl)?;
-            let patch_file = Path::join(diff_files_path.as_ref(), x.to_string() + format!(".zspatch{i}").as_ref());
+            let patch_file = Path::join(diff_files_path.as_ref(), x.to_string() + format!(".zspatch{i:0>3}").as_ref());
             create_path(x, &diff_files_path)?;
             fs::write(patch_file, patch_data).map_err(|_| format!("Couldn't write .zspatch file {x}"))?;
-            if n < chunk_size { break; }
+            if n < CHUNK_SIZE { break; }
         }
         Ok::<(), String>(())
     })?;
@@ -100,6 +98,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &E
     {
         let mut archive = Builder::new(&mut result);
         WalkDir::new(temp_dir)
+            .sort_by_file_name()
             .into_iter()
             .filter_map(|e| e.ok())
             .try_for_each(|x| {
@@ -128,6 +127,8 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
 
     let backup_dir = "backup";
     fs::create_dir_all(backup_dir).map_err(|_| r"Couln't create backup dir")?;
+    let mut last_file_name = "".to_string();
+    let mut current_file = Option::<File>::None;
 
     let patch_file = File::open(patch).map_err(|_| r"Couln't open patch file")?;
     let result = zstd::Decoder::new(patch_file).map_err(|_| "Couldn't create zstd decoder")?;
@@ -159,24 +160,35 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
                     let ext = ".zspatch";
                     let ext_pos = split[1].rfind(ext).ok_or(format!("file {} doesn't contain extension", split[1]))?;
                     let new_file_name = split[1][..ext_pos].to_string();
-                    let chunk_size = 0x40000000;
+                    if !last_file_name.eq(&new_file_name) {
+                        move_file(&new_file_name, &diff_files_path)?;
+                        if let Some(old_file) = current_file {
+                            log_info(log, format!("no more patch data for {last_file_name}, copying from old file").as_ref());
+                            let mut new_file = fs::OpenOptions::new().create(true).append(true).open(&last_file_name).map_err(|_| format!("Couldn't open {last_file_name} in write mode"))?;
+                            std::io::copy(&mut &old_file, &mut new_file).map_err(|_| format!("Couldn't copy data from {last_file_name}"))?;
+                        }
+                        current_file = Some(File::open(Path::join(diff_files_path.as_ref(), &new_file_name)).map_err(|_| format!("Couldn't open {new_file_name} in backup dir"))?);
+                        last_file_name = new_file_name.clone();
+                    }
+                    let mut old_file = current_file.as_ref().ok_or(format!("Couldn't get current file {new_file_name}"))?;
 
                     let mut patch_data = Vec::with_capacity(file.size() as usize);
                     let i = split[1][ext_pos+ext.len()..].parse::<u64>().map_err(|_| format!("Couldn't parse .zspatch number for {}", split[1]))?;
-                    if i == 1 {
-                        move_file(&new_file_name, &diff_files_path)?;
-                    }
-                    log_info(log, format!("applying diff {new_file_name} part {i}").as_ref());
-                    let mut old_file = File::open(Path::join(diff_files_path.as_ref(), &new_file_name)).map_err(|_| format!("Couldn't open {new_file_name} in backup dir"))?;
-                    let mut old_data = Vec::with_capacity(min(old_file.metadata().map_err(|_| format!("Couldn't get metadata for file {new_file_name}"))?.len() as usize, chunk_size));
-                    let seek_pos = (i-1)*chunk_size as u64;
-                    old_file.seek(SeekFrom::Start(seek_pos)).map_err(|_| format!("Couldn't seek to {seek_pos} for {new_file_name}"))?;
-                    old_file.take(chunk_size as u64).read_to_end(&mut old_data).map_err(|_| format!("Couldn't read {chunk_size} at {seek_pos} for {new_file_name}"))?;
+                    let mut old_data = Vec::with_capacity(min(old_file.metadata().map_err(|_| format!("Couldn't get metadata for file {new_file_name}"))?.len() as usize, CHUNK_SIZE));
+                    let mut new_file = fs::OpenOptions::new().create(true).append(true).open(&new_file_name).map_err(|_| format!("Couldn't open {new_file_name} in write mode"))?;
 
+                    let missing_chunks = i - 1 - old_file.stream_position().map_err(|_| format!("Couldn't get stream position for {new_file_name}"))? / (CHUNK_SIZE as u64);
+                    if missing_chunks > 0 {
+                        log_info(log, format!("no part until {i} for {new_file_name}, copying {missing_chunks} chunks as is").as_ref());
+                        let mut take = Read::by_ref(&mut old_file).take(missing_chunks * CHUNK_SIZE as u64);
+                        std::io::copy(&mut take, &mut new_file).map_err(|_| format!("Couldn't copy data from {new_file_name}"))?;
+                    }
+
+                    log_info(log, format!("applying diff {new_file_name} part {i}").as_ref());
+                    Read::by_ref(&mut old_file).take(CHUNK_SIZE as u64).read_to_end(&mut old_data).map_err(|_| format!("Couldn't read {CHUNK_SIZE} for {new_file_name}"))?;
                     file.read_to_end(&mut patch_data).map_err(|_| format!("Couldn't read .zspatch{i} for {new_file_name}"))?;
                     match apply(old_data, patch_data) {
                         Ok(result) => {
-                            let mut new_file = fs::OpenOptions::new().create(true).append(true).open(&new_file_name).map_err(|_| format!("Couldn't open {new_file_name} in write mode"))?;
                             new_file.write_all(&result).map_err(|_| format!("Couldn't write into {new_file_name}"))?;
                         }
                         Err(_) => {
