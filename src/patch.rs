@@ -12,7 +12,7 @@ use winsafe::{msg, WString};
 use zstd::zstd_safe::{CParameter, CompressionLevel};
 use zstd::Decoder;
 
-const CHUNK_SIZE: usize = 0x40000000;
+const CHUNK_SIZE: usize = 0x80000000;
 
 fn create_path(path: &str, root: &str) -> Result<(), String> {
     if let Some(x) = path.rfind(std::path::MAIN_SEPARATOR_STR) {
@@ -34,6 +34,7 @@ fn log_info(log: &Edit, text: &str) {
 pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &Edit) -> Result<(), String> {
     if !metadata(&old_file).map_or(false, |x| x.is_dir()) { return Err("Old path doesn't exist or is not a directory".to_string()) };
     if !metadata(&new_file).map_or(false, |x| x.is_dir()) { return Err("New path doesn't exist or is not a directory".to_string()) };
+    log.set_text("");
 
     let old_set = walk_dir(&old_file)?;
     let new_set = walk_dir(&new_file)?;
@@ -122,6 +123,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &E
 pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(), String> {
     if !metadata(&path).map_or(false, |x| x.is_dir()) { return Err("Path to update doesn't exist or is not a directory".to_string()) };
     if !metadata(&patch).map_or(false, |x| x.is_file()) { return Err("Patch file doesn't exist".to_string()) };
+    log.set_text("");
     std::env::set_current_dir(&path).map_err(|_| format!("Couldn't set current dir to {path}"))?;
     let mut patch_error = false;
 

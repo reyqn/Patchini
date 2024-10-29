@@ -2,7 +2,7 @@ use crate::ids;
 use crate::patch::create_patch;
 use std::time::Instant;
 use winsafe::co::SW;
-use winsafe::{self as w, co, gui, prelude::*, AnyResult, HWND, POINT};
+use winsafe::{self as w, co, gui, msg, prelude::*, AnyResult, HWND, POINT};
 
 #[derive(Clone)]
 pub struct CreateTab {
@@ -57,6 +57,16 @@ impl CreateTab {
         let self2 = self.clone();
         self.wnd.on().wm_init_dialog(move |_| {
             self2.track_lvl.set_range(1,22);
+            unsafe {
+                self2.track_lvl.hwnd().SendMessage(msg::trbm::SetSelStart {
+                    redraw: false,
+                    start: 0
+                });
+                self2.track_lvl.hwnd().SendMessage(msg::trbm::SetSelEnd {
+                    redraw: false,
+                    end: 15
+                });
+            }
             self2.switch_view(false);
             Ok(true)
         });
