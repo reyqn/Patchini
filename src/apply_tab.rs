@@ -2,7 +2,7 @@ use crate::ids;
 use crate::patch::apply_patch;
 use std::time::Instant;
 use winsafe::co::SW;
-use winsafe::{self as w, co, gui, prelude::*, HWND, POINT};
+use winsafe::{self as w, co, gui, prelude::*, HWND};
 
 #[derive(Clone)]
 pub struct ApplyTab {
@@ -24,10 +24,10 @@ impl AsRef<gui::WindowControl> for ApplyTab {
 }
 
 impl ApplyTab {
-    pub fn new(parent: &impl GuiParent) -> Self {
+    pub fn new(parent: &(impl GuiParent + 'static)) -> Self {
         let dont_move = (gui::Horz::None, gui::Vert::None);
 
-        let wnd = gui::WindowControl::new_dlg(parent, ids::DLG_APPLY, POINT::new(0, 0), dont_move, None);
+        let wnd = gui::WindowControl::new_dlg(parent, ids::DLG_APPLY, (0, 0), dont_move, None);
 
         let _label_path = gui::Label::new_dlg(&wnd, ids::LBL_PATH, dont_move);
         let edit_path = gui::Edit::new_dlg(&wnd, ids::TXT_PATH, dont_move);
@@ -61,7 +61,7 @@ impl ApplyTab {
         self.btn_path.on().bn_clicked(move || {
             let fileo = w::CoCreateInstance::<w::IFileOpenDialog>(
                 &co::CLSID::FileOpenDialog,
-                None,
+                None::<&w::IUnknown>,
                 co::CLSCTX::INPROC_SERVER,
             )?;
 
@@ -83,7 +83,7 @@ impl ApplyTab {
         self.btn_patch.on().bn_clicked(move || {
             let fileo = w::CoCreateInstance::<w::IFileOpenDialog>(
                 &co::CLSID::FileOpenDialog,
-                None,
+                None::<&w::IUnknown>,
                 co::CLSCTX::INPROC_SERVER,
             )?;
 
@@ -113,8 +113,8 @@ impl ApplyTab {
                     *crate::main_window::EPOCH.lock().unwrap() = Some(Instant::now());
                     self2.switch_view(true);
                     self2.btn_apply.hwnd().EnableWindow(false);
-                    let old_path = self2.edit_path.text().to_string();
-                    let new_path = self2.edit_patch.text().to_string();
+                    let old_path = self2.edit_path.text().unwrap().to_string();
+                    let new_path = self2.edit_patch.text().unwrap().to_string();
                     let self3 = self2.clone();
                     move || {
                         match apply_patch(old_path, new_path, &self3.apply_log) {

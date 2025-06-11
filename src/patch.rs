@@ -7,12 +7,12 @@ use std::path::Path;
 use tar::{Archive, Builder, Entry, EntryType};
 use walkdir::WalkDir;
 use winsafe::gui::Edit;
-use winsafe::prelude::{user_Hwnd, GuiWindow, GuiWindowText};
+use winsafe::prelude::{user_Hwnd, GuiWindow};
 use winsafe::{msg, WString};
-use zstd::zstd_safe::{CParameter, CompressionLevel};
+use zstd::zstd_safe::{CParameter};
 use zstd::Decoder;
 
-const CHUNK_SIZE: usize = 0x80000000;
+const CHUNK_SIZE: usize = 0x70000000;
 
 fn create_path(path: &str, root: &str) -> Result<(), String> {
     if let Some(x) = path.rfind(std::path::MAIN_SEPARATOR_STR) {
@@ -22,7 +22,7 @@ fn create_path(path: &str, root: &str) -> Result<(), String> {
 }
 
 fn log_info(log: &Edit, text: &str) {
-    let i = log.text().len();
+    let i = log.text().unwrap().len();
     log.set_selection(i as i32, i as i32);
     unsafe {
         log.hwnd().SendMessage(msg::em::ReplaceSel {
@@ -31,7 +31,7 @@ fn log_info(log: &Edit, text: &str) {
     }
 }
 
-pub(crate) fn create_patch(old_file: String, new_file: String, lvl: u32, log: &Edit) -> Result<(), String> {
+pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &Edit) -> Result<(), String> {
     if !metadata(&old_file).map_or(false, |x| x.is_dir()) { return Err("Old path doesn't exist or is not a directory".to_string()) };
     if !metadata(&new_file).map_or(false, |x| x.is_dir()) { return Err("New path doesn't exist or is not a directory".to_string()) };
     log.set_text("");
@@ -132,7 +132,7 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
     let mut last_file_name = "".to_string();
     let mut current_file = Option::<File>::None;
 
-    let patch_file = File::open(patch).map_err(|_| r"Couln't open patch file")?;
+    let patch_file = File::open(patch).map_err(|_| r"Couldn't open patch file")?;
     let result = zstd::Decoder::new(patch_file).map_err(|_| "Couldn't create zstd decoder")?;
     {
         let mut a = Archive::new(result);
@@ -220,7 +220,7 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
 
     log_info(log, "Done");
     let mut log_file = File::create("backup/logs.txt").map_err(|_| "Couldn't create logs.txt")?;
-    log_file.write_all(log.text().as_bytes()).map_err(|_| "Couldn't write logs.txt")?;
+    log_file.write_all(log.text().unwrap().as_bytes()).map_err(|_| "Couldn't write logs.txt")?;
     if patch_error {
         return Err("Error(s) occurred while applying patch, check logs in backup dir for more info".to_string())
     }
@@ -264,12 +264,12 @@ fn apply(old_data: Vec<u8>, patch_data: Vec<u8>) -> Result<Vec<u8>, ()> {
     Ok(new_data)
 }
 
-fn create(old_data: Vec<u8>, new_data: Vec<u8>, lvl: u32) -> Result<Vec<u8>, String> {
+fn create(old_data: Vec<u8>, new_data: Vec<u8>, lvl: i32) -> Result<Vec<u8>, String> {
     let high_bit = fio_high_bit64(old_data.len());
     let window_log = (high_bit+1).clamp(10, 31);
 
     let mut dict = zstd::zstd_safe::CCtx::create();
-    dict.set_parameter(CParameter::CompressionLevel(lvl as CompressionLevel)).map_err(|_| "Couldn't set compression level")?;
+    dict.set_parameter(CParameter::CompressionLevel(lvl)).map_err(|_| "Couldn't set compression level")?;
     dict.set_parameter(CParameter::WindowLog(window_log)).map_err(|_| format!("Couldn't set window log {window_log}"))?;
     dict.set_parameter(CParameter::EnableLongDistanceMatching(true)).map_err(|_| "Couldn't enable long distance matching")?;
     dict.ref_prefix(&old_data).map_err(|_| "Couldn't apply ref prefix")?;

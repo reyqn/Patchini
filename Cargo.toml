@@ -1,12 +1,12 @@
 [package]
 name = "Patchini"
 version = "0.2.1"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tar = "0.4.42"
+tar = "0.4.44"
 walkdir = "2.5.0"
-winsafe = { version = "0.0.22", features = ["kernel", "gui", "shell", "dshow"] }
-zstd = "0.13.2"
+winsafe = { version = "0.0.24", features = ["kernel", "gui", "shell", "dshow"] }
+zstd = "0.13.3"

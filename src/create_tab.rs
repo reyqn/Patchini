@@ -2,7 +2,7 @@ use crate::ids;
 use crate::patch::create_patch;
 use std::time::Instant;
 use winsafe::co::SW;
-use winsafe::{self as w, co, gui, msg, prelude::*, AnyResult, HWND, POINT};
+use winsafe::{self as w, co, gui, msg, prelude::*, AnyResult, HWND};
 
 #[derive(Clone)]
 pub struct CreateTab {
@@ -25,10 +25,10 @@ impl AsRef<gui::WindowControl> for CreateTab { // we must implement AsRef so thi
 }
 
 impl CreateTab {
-    pub fn new(parent: &impl GuiParent) -> Self {
+    pub fn new(parent: &(impl GuiParent + 'static)) -> Self {
         let dont_move = (gui::Horz::None, gui::Vert::None);
 
-        let wnd = gui::WindowControl::new_dlg(parent, ids::DLG_CREATE, POINT::new(0, 0), dont_move, None);
+        let wnd = gui::WindowControl::new_dlg(parent, ids::DLG_CREATE, (0, 0), dont_move, None);
 
         let _label_old = gui::Label::new_dlg(&wnd, ids::LBL_OLD, dont_move);
         let edit_old = gui::Edit::new_dlg(&wnd, ids::TXT_OLD, dont_move);
@@ -56,17 +56,18 @@ impl CreateTab {
     fn events(&self) {
         let self2 = self.clone();
         self.wnd.on().wm_init_dialog(move |_| {
-            self2.track_lvl.set_range(1,22);
+            self2.track_lvl.set_range(1,30);
             unsafe {
                 self2.track_lvl.hwnd().SendMessage(msg::trbm::SetSelStart {
                     redraw: false,
-                    start: 0
+                    start: 9
                 });
                 self2.track_lvl.hwnd().SendMessage(msg::trbm::SetSelEnd {
                     redraw: false,
-                    end: 15
+                    end: 19
                 });
             }
+            self2.track_lvl.set_pos(11);
             self2.switch_view(false);
             Ok(true)
         });
@@ -75,7 +76,7 @@ impl CreateTab {
         self.btn_old.on().bn_clicked(move || {
             let fileo = w::CoCreateInstance::<w::IFileOpenDialog>(
                 &co::CLSID::FileOpenDialog,
-                None,
+                None::<&w::IUnknown>,
                 co::CLSCTX::INPROC_SERVER,
             )?;
 
@@ -97,7 +98,7 @@ impl CreateTab {
         self.btn_new.on().bn_clicked(move || {
             let fileo = w::CoCreateInstance::<w::IFileOpenDialog>(
                 &co::CLSID::FileOpenDialog,
-                None,
+                None::<&w::IUnknown>,
                 co::CLSCTX::INPROC_SERVER,
             )?;
 
@@ -122,9 +123,10 @@ impl CreateTab {
                     *crate::main_window::EPOCH.lock().unwrap() = Some(Instant::now());
                     self2.switch_view(true);
                     self2.btn_create.hwnd().EnableWindow(false);
-                    let old_path = self2.edit_old.text().to_string();
-                    let new_path = self2.edit_new.text().to_string();
-                    let lvl = self2.track_lvl.pos();
+                    let old_path = self2.edit_old.text().unwrap().to_string();
+                    let new_path = self2.edit_new.text().unwrap().to_string();
+                    let mut lvl = self2.track_lvl.pos() as i32 - 8;
+                    if lvl <= 0 { lvl -= 1 };
                     let self3 = self2.clone();
                     move || {
                         match create_patch(old_path, new_path, lvl, &self3.edit_log) {
