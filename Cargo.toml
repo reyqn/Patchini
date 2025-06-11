@@ -8,5 +8,6 @@ edition = "2024"
 [dependencies]
 tar = "0.4.44"
 walkdir = "2.5.0"
-winsafe = { version = "0.0.24", features = ["kernel", "gui", "shell", "dshow"] }
+winsafe = { git = "https://github.com/rodrigocfd/winsafe", rev = "21eab3914ec640b43dd5d20e2444ca2702e292ad", features = ["kernel", "gui", "shell", "dshow"] }
 zstd = "0.13.3"
+zstd-safe = "7.2.4"

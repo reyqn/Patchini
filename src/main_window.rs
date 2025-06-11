@@ -2,7 +2,7 @@ use crate::apply_tab::ApplyTab;
 use crate::create_tab::CreateTab;
 use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
-use winsafe::prelude::{user_Hwnd, GuiParent, GuiWindow};
+use winsafe::prelude::{GuiParent, GuiWindow};
 use winsafe::{co, gui, AnyResult};
 
 #[derive(Clone)]

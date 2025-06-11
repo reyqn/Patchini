@@ -7,12 +7,12 @@ use std::path::Path;
 use tar::{Archive, Builder, Entry, EntryType};
 use walkdir::WalkDir;
 use winsafe::gui::Edit;
-use winsafe::prelude::{user_Hwnd, GuiWindow};
+use winsafe::prelude::{GuiWindow};
 use winsafe::{msg, WString};
 use zstd::zstd_safe::{CParameter};
 use zstd::Decoder;
 
-const CHUNK_SIZE: usize = 0x70000000;
+const CHUNK_SIZE: usize = 0x77777777;
 
 fn create_path(path: &str, root: &str) -> Result<(), String> {
     if let Some(x) = path.rfind(std::path::MAIN_SEPARATOR_STR) {
