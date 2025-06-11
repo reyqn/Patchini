@@ -88,7 +88,7 @@ impl CreateTab {
 
             if fileo.Show(self2.wnd.hwnd())? {
                 let text = fileo.GetResult()?.GetDisplayName(co::SIGDN::FILESYSPATH)?;
-                self2.edit_old.set_text(text.as_str());
+                self2.edit_old.set_text(text.as_str()).map_err(|_| "Couldn't set old path")?;
             }
 
             Ok(())
@@ -110,7 +110,7 @@ impl CreateTab {
 
             if fileo.Show(self2.wnd.hwnd())? {
                 let text = fileo.GetResult()?.GetDisplayName(co::SIGDN::FILESYSPATH)?;
-                self2.edit_new.set_text(text.as_str());
+                self2.edit_new.set_text(text.as_str()).map_err(|_| "Couldn't set new path")?;
             }
 
             Ok(())
@@ -123,8 +123,8 @@ impl CreateTab {
                     *crate::main_window::EPOCH.lock().unwrap() = Some(Instant::now());
                     self2.switch_view(true);
                     self2.btn_create.hwnd().EnableWindow(false);
-                    let old_path = self2.edit_old.text().unwrap().to_string();
-                    let new_path = self2.edit_new.text().unwrap().to_string();
+                    let old_path = self2.edit_old.text().map_err(|_| "Couldn't get old path")?.to_string();
+                    let new_path = self2.edit_new.text().map_err(|_| "Couldn't get new path")?.to_string();
                     let mut lvl = self2.track_lvl.pos() as i32 - 8;
                     if lvl <= 0 { lvl -= 1 };
                     let self3 = self2.clone();

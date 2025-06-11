@@ -65,7 +65,7 @@ impl MainWindow {
 
 fn update_status(status: &gui::StatusBar) -> AnyResult<()> {
     if let Some(x) = *EPOCH.lock().unwrap() {
-        status.parts().get(0).set_text(&x.elapsed().as_secs().to_string());
+        status.parts().get(0).set_text(&x.elapsed().as_secs().to_string())?;
     }
     Ok(())
 }

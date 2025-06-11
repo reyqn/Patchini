@@ -73,7 +73,7 @@ impl ApplyTab {
 
             if fileo.Show(self2.wnd.hwnd())? {
                 let text = fileo.GetResult()?.GetDisplayName(co::SIGDN::FILESYSPATH)?;
-                self2.edit_path.set_text(text.as_str());
+                self2.edit_path.set_text(text.as_str()).map_err(|_| "Couldn't set path")?;
             }
 
             Ok(())
@@ -100,7 +100,7 @@ impl ApplyTab {
 
             if fileo.Show(self2.wnd.hwnd())? {
                 let text = fileo.GetResult()?.GetDisplayName(co::SIGDN::FILESYSPATH)?;
-                self2.edit_patch.set_text(text.as_str());
+                self2.edit_patch.set_text(text.as_str()).map_err(|_| "Couldn't set patch")?;
             }
 
             Ok(())
@@ -113,8 +113,8 @@ impl ApplyTab {
                     *crate::main_window::EPOCH.lock().unwrap() = Some(Instant::now());
                     self2.switch_view(true);
                     self2.btn_apply.hwnd().EnableWindow(false);
-                    let old_path = self2.edit_path.text().unwrap().to_string();
-                    let new_path = self2.edit_patch.text().unwrap().to_string();
+                    let old_path = self2.edit_path.text().map_err(|_| "Couldn't get old path")?.to_string();
+                    let new_path = self2.edit_patch.text().map_err(|_| "Couldn't get new path")?.to_string();
                     let self3 = self2.clone();
                     move || {
                         match apply_patch(old_path, new_path, &self3.apply_log) {

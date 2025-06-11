@@ -21,20 +21,21 @@ fn create_path(path: &str, root: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn log_info(log: &Edit, text: &str) {
-    let i = log.text().unwrap().len();
+fn log_info(log: &Edit, text: &str) -> Result<(), String> {
+    let i = log.text().map_err(|_| "Couldn't get log length")?.len();
     log.set_selection(i as i32, i as i32);
     unsafe {
         log.hwnd().SendMessage(msg::em::ReplaceSel {
             can_be_undone: false, replacement_text: WString::from_str(format!("{text}\r\n"))
-        })
+        });
+        Ok(())
     }
 }
 
 pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &Edit) -> Result<(), String> {
     if !metadata(&old_file).map_or(false, |x| x.is_dir()) { return Err("Old path doesn't exist or is not a directory".to_string()) };
     if !metadata(&new_file).map_or(false, |x| x.is_dir()) { return Err("New path doesn't exist or is not a directory".to_string()) };
-    log.set_text("");
+    log.set_text("").map_err(|_| "Couldn't clear text")?;
 
     let old_set = walk_dir(&old_file)?;
     let new_set = walk_dir(&new_file)?;
@@ -42,30 +43,30 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &E
     let temp_dir = "patch";
     fs::create_dir_all(temp_dir).map_err(|_| "Couldn't create patch dir")?;
 
-    log_info(log, "Compiling removed files");
+    log_info(log, "Compiling removed files")?;
     let mut rm_file = File::create(Path::join(temp_dir.as_ref(),"rm_files.txt")).map_err(|_| "Couldn't create rm_files.txt")?;
     old_set.difference(&new_set).try_for_each(|x| writeln!(rm_file, "{}", x).map_err(|_| "Couldn't write into rm_files.txt"))?;
 
-    log_info(log, "Compiling added files");
+    log_info(log, "Compiling added files")?;
     let new_files_path = Path::join(temp_dir.as_ref(), "new_files").to_str().ok_or("to_str failed for new_files_path")?.to_string();
     fs::create_dir_all(&new_files_path).map_err(|_| "Couldn't create new_files dir")?;
     new_set.difference(&old_set).try_for_each(|x| {
         create_path(x, &new_files_path)?;
-        log_info(log, format!("adding file {x}").as_ref());
+        log_info(log, format!("adding file {x}").as_ref())?;
         match fs::copy(Path::join(new_file.as_ref(), x), Path::join(new_files_path.as_ref(), x)) {
             Ok(_) => {Ok(())}
             Err(_) => {Err(format!("Couldn't copy {x}"))}
         }
     })?;
 
-    log_info(log, format!("Compiling changed files, compression level: {lvl}").as_ref());
+    log_info(log, format!("Compiling changed files, compression level: {lvl}").as_ref())?;
     let diff_files_path = Path::join(temp_dir.as_ref(), "diff_files").to_str().ok_or("to_str failed for diff_files_path")?.to_string();
     fs::create_dir_all(&diff_files_path).map_err(|_| "Couldn't create diff_files dir")?;
     old_set.intersection(&new_set).try_for_each(|x| {
         let old_path = Path::join(old_file.as_ref(), x);
         let new_path = Path::join(new_file.as_ref(), x);
 
-        log_info(log, format!("diffing file {x}").as_ref());
+        log_info(log, format!("diffing file {x}").as_ref())?;
         let mut old = File::open(&old_path).map_err(|_| format!("Couldn't open old file {x}"))?;
         let mut new = File::open(&new_path).map_err(|_| format!("Couldn't open new file {x}"))?;
         let old_size = old.metadata().map_err(|_| format!("Couldn't get metadata for file {x}"))?.len();
@@ -93,7 +94,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &E
         Ok::<(), String>(())
     })?;
 
-    log_info(log, "Generating patch file");
+    log_info(log, "Generating patch file")?;
     let compressed_file = File::create("patch.patchini").map_err(|_| "Couldn't write create patchini file")?;
     let mut result = zstd::Encoder::new(compressed_file, 1).map_err(|_| "Couldn't create zstd encoder")?;
     {
@@ -115,7 +116,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &E
     result.finish().map_err(|_| "Couldn't compress taped file")?;
     fs::remove_dir_all("patch").map_err(|_| "Couldn't cleanup")?;
 
-    log_info(log, "Done");
+    log_info(log, "Done")?;
 
     Ok(())
 }
@@ -123,7 +124,7 @@ pub(crate) fn create_patch(old_file: String, new_file: String, lvl: i32, log: &E
 pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(), String> {
     if !metadata(&path).map_or(false, |x| x.is_dir()) { return Err("Path to update doesn't exist or is not a directory".to_string()) };
     if !metadata(&patch).map_or(false, |x| x.is_file()) { return Err("Patch file doesn't exist".to_string()) };
-    log.set_text("");
+    log.set_text("").map_err(|_| "Couldn't clear text")?;
     std::env::set_current_dir(&path).map_err(|_| format!("Couldn't set current dir to {path}"))?;
     let mut patch_error = false;
 
@@ -153,7 +154,7 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
             match split[0].as_str() {
                 "new_files" => {
                     let added_file = split[1].as_str();
-                    log_info(log, format!("adding {added_file}").as_ref());
+                    log_info(log, format!("adding {added_file}").as_ref())?;
                     add_file(&path, added_file, file)?;
                 },
                 "diff_files" => {
@@ -165,7 +166,7 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
                     if !last_file_name.eq(&new_file_name) {
                         move_file(&new_file_name, &diff_files_path)?;
                         if let Some(old_file) = current_file {
-                            log_info(log, format!("no more patch data for {last_file_name}, copying from old file").as_ref());
+                            log_info(log, format!("no more patch data for {last_file_name}, copying from old file").as_ref())?;
                             let mut new_file = fs::OpenOptions::new().create(true).append(true).open(&last_file_name).map_err(|_| format!("Couldn't open {last_file_name} in write mode"))?;
                             std::io::copy(&mut &old_file, &mut new_file).map_err(|_| format!("Couldn't copy data from {last_file_name}"))?;
                         }
@@ -181,12 +182,12 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
 
                     let missing_chunks = i - 1 - old_file.stream_position().map_err(|_| format!("Couldn't get stream position for {new_file_name}"))? / (CHUNK_SIZE as u64);
                     if missing_chunks > 0 {
-                        log_info(log, format!("no part until {i} for {new_file_name}, copying {missing_chunks} chunks as is").as_ref());
+                        log_info(log, format!("no part until {i} for {new_file_name}, copying {missing_chunks} chunks as is").as_ref())?;
                         let mut take = Read::by_ref(&mut old_file).take(missing_chunks * CHUNK_SIZE as u64);
                         std::io::copy(&mut take, &mut new_file).map_err(|_| format!("Couldn't copy data from {new_file_name}"))?;
                     }
 
-                    log_info(log, format!("applying diff {new_file_name} part {i}").as_ref());
+                    log_info(log, format!("applying diff {new_file_name} part {i}").as_ref())?;
                     Read::by_ref(&mut old_file).take(CHUNK_SIZE as u64).read_to_end(&mut old_data).map_err(|_| format!("Couldn't read {CHUNK_SIZE} for {new_file_name}"))?;
                     file.read_to_end(&mut patch_data).map_err(|_| format!("Couldn't read .zspatch{i} for {new_file_name}"))?;
                     match apply(old_data, patch_data) {
@@ -195,18 +196,18 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
                         }
                         Err(_) => {
                             patch_error = true;
-                            log_info(log, &format!("Error while applying patch for {new_file_name}"))
+                            log_info(log, &format!("Error while applying patch for {new_file_name}"))?
                         }
                     }
                 },
                 "rm_files.txt" => {
-                    log_info(log, "Removing files");
+                    log_info(log, "Removing files")?;
                     fs::create_dir_all("backup/rm_files").map_err(|_| "Couldn't create rm_files backup dir")?;
                     let reader = BufReader::new(file);
                     for line in reader.lines() {
                         let rem_file = line.map_err(|_| "Couldn't read line in rm_files.exe")?;
                         if move_file(&rem_file, "backup/rm_files").is_err() {
-                            log_info(log, &format!("Couldn't remove {rem_file}"))
+                            log_info(log, &format!("Couldn't remove {rem_file}"))?
                         };
                     }
                 }
@@ -218,9 +219,9 @@ pub(crate) fn apply_patch(path: String, patch: String, log: &Edit) -> Result<(),
         }
     }
 
-    log_info(log, "Done");
+    log_info(log, "Done")?;
     let mut log_file = File::create("backup/logs.txt").map_err(|_| "Couldn't create logs.txt")?;
-    log_file.write_all(log.text().unwrap().as_bytes()).map_err(|_| "Couldn't write logs.txt")?;
+    log_file.write_all(log.text().map_err(|_| "Couldn't get log text")?.as_bytes()).map_err(|_| "Couldn't write logs.txt")?;
     if patch_error {
         return Err("Error(s) occurred while applying patch, check logs in backup dir for more info".to_string())
     }
@@ -255,8 +256,8 @@ fn walk_dir(dir: &String) -> Result<HashSet<String>, String> {
 }
 
 fn apply(old_data: Vec<u8>, patch_data: Vec<u8>) -> Result<Vec<u8>, ()> {
-    let mut dict = zstd::zstd_safe::DCtx::create();
-    let frame_content_size = zstd::zstd_safe::get_frame_content_size(&patch_data).map_err(|_| ())?.ok_or(())?;
+    let mut dict = zstd_safe::DCtx::create();
+    let frame_content_size = zstd_safe::get_frame_content_size(&patch_data).map_err(|_| ())?.ok_or(())?;
     let mut new_data = Vec::with_capacity(frame_content_size as usize);
 
     dict.decompress_using_dict(&mut new_data, &patch_data, &old_data).map_err(|_| ())?;
@@ -268,13 +269,13 @@ fn create(old_data: Vec<u8>, new_data: Vec<u8>, lvl: i32) -> Result<Vec<u8>, Str
     let high_bit = fio_high_bit64(old_data.len());
     let window_log = (high_bit+1).clamp(10, 31);
 
-    let mut dict = zstd::zstd_safe::CCtx::create();
+    let mut dict = zstd_safe::CCtx::create();
     dict.set_parameter(CParameter::CompressionLevel(lvl)).map_err(|_| "Couldn't set compression level")?;
     dict.set_parameter(CParameter::WindowLog(window_log)).map_err(|_| format!("Couldn't set window log {window_log}"))?;
     dict.set_parameter(CParameter::EnableLongDistanceMatching(true)).map_err(|_| "Couldn't enable long distance matching")?;
     dict.ref_prefix(&old_data).map_err(|_| "Couldn't apply ref prefix")?;
 
-    let compress_bound = zstd::zstd_safe::compress_bound(new_data.len());
+    let compress_bound = zstd_safe::compress_bound(new_data.len());
 
     let mut patch_data = Vec::with_capacity(compress_bound);
     dict.compress2(&mut patch_data, &new_data).map_err(|_| "Couldn't create zspatch data")?;
